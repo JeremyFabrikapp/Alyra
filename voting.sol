@@ -1,83 +1,128 @@
 //SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.7.6; 
-import "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/90ed1af972299070f51bf4665a85da56ac4d355e/contracts/access/Ownable.sol";
+pragma solidity ^0.7.6;
 pragma experimental ABIEncoderV2;
+
+import "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/90ed1af972299070f51bf4665a85da56ac4d355e/contracts/access/Ownable.sol";
+
+/**
+ * @title Voting contract
+ * @author Mohamed Jeremy Cedric
+ */
 contract Voting is Ownable {
+    enum WorkflowStatus {
+        RegisteringVoters,
+        ProposalsRegistrationStarted,
+        ProposalsRegistrationEnded,
+        VotingSessionStarted,
+        VotingSessionEnded,
+        VotesTallied
+    }
 
-uint public proposalId=0;
-struct Voter {
-bool isRegistered;
-bool hasVoted;
-uint votedProposalId;
-}
+    struct Voter {
+        bool isRegistered;
+        bool hasVoted;
+        uint16 votedProposalId;
+    }
 
-struct Proposal {
-string description;
-uint voteCount;
-}
+    struct Proposal {
+        string description;
+        uint32 voteCount;
+    }
 
-mapping (address => Voter) public _voterlist;
-Proposal[] public _proposallist;
-uint private _winningProposalId;
+    mapping(address => Voter) public _voterlist;
 
-enum WorkflowStatus {
-RegisteringVoters,
-ProposalsRegistrationStarted,
-ProposalsRegistrationEnded,
-VotingSessionStarted,
-VotingSessionEnded,
-VotesTallied
-}
+    Proposal[] public _proposallist;
+    WorkflowStatus public _workflow;
 
-WorkflowStatus public _workflow;
+    uint16 public proposalId = 0;
+    uint16 private _winningProposalId;
 
-event VoterRegistered(address voterAddress);
-event ProposalsRegistrationStarted();
-event ProposalsRegistrationEnded();
-event ProposalRegistered(uint proposalId);
-event VotingSessionStarted();
-event VotingSessionEnded();
-event Voted (address voter, uint proposalId);
-event VotesTallied();
-event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus
-newStatus);
+    event VoterRegistered(address voterAddress);
+    event ProposalsRegistrationStarted();
+    event ProposalsRegistrationEnded();
+    event ProposalRegistered(uint16 proposalId);
+    event VotingSessionStarted();
+    event VotingSessionEnded();
+    event Voted(address voter, uint16 proposalId);
+    event VotesTallied();
+    event WorkflowStatusChange(
+        WorkflowStatus previousStatus,
+        WorkflowStatus newStatus
+    );
 
-
-
-function RegisterVoter(address _address) public onlyOwner {
-       
-        require(_workflow == WorkflowStatus.RegisteringVoters);
-        require( _address != address(0),  "address is  0!");
-        require(_voterlist[_address].isRegistered==false, " This address is already registered");
-        _voterlist[_address].isRegistered=true;
+    /**
+     * @dev Register voter in the mapping _voterlist
+     * @param _address Voter address
+     */
+    function RegisterVoter(address _address) public onlyOwner {
+        require(
+            _workflow == WorkflowStatus.RegisteringVoters,
+            "The status is not correct : Must be RegisteringVoters"
+        );
+        require(
+            _address != address(0),
+            "address is  0! Please check address input"
+        );
+        require(
+            _voterlist[_address].isRegistered == false,
+            "This address is already registered"
+        );
+        _voterlist[_address].isRegistered = true;
         emit VoterRegistered(_address);
-        
-      }
+    }
 
-function RegisterProposal(string memory _description) public {
-        require(_workflow == WorkflowStatus.ProposalsRegistrationStarted);
-        _proposallist.push(Proposal(_description,0));
-         proposalId+= 1;
+    /**
+     * @dev Register a new proposal
+     * @param _description The proposal description
+     */
+    function RegisterProposal(string memory _description) public {
+        require(
+            _workflow == WorkflowStatus.ProposalsRegistrationStarted,
+            "The status is not correct : Must be ProposalsRegistrationStarted"
+        );
+        _proposallist.push(Proposal(_description, 0));
+        proposalId++;
         emit ProposalRegistered(proposalId);
     }
-    
-    
-    
-function AddVote(uint _proposalId) public  {
-        require(_workflow == WorkflowStatus.VotingSessionStarted);
-        require(_voterlist[msg.sender].isRegistered==true, "The voter is not registered");
-        require(_voterlist[msg.sender].hasVoted==false, "The voter has already voted");
+
+    /**
+     * @dev Add a vote in favor of this _proposalId
+     * @param _proposalId Proposal identifier
+     */
+    function AddVote(uint16 _proposalId) public {
+        require(
+            _workflow == WorkflowStatus.VotingSessionStarted,
+            "The status is not correct : Must be VotingSessionStarted"
+        );
+        require(
+            _voterlist[msg.sender].isRegistered == true,
+            "The voter is not registered"
+        );
+        require(
+            _voterlist[msg.sender].hasVoted == false,
+            "The voter has already voted"
+        );
+        _proposallist[_proposalId].voteCount ++;
+
         _voterlist[msg.sender].votedProposalId = _proposalId;
-        _proposallist[_proposalId].voteCount += 1;
         _voterlist[msg.sender].hasVoted = true;
-        emit Voted (msg.sender, _proposalId);
+
+        emit Voted(msg.sender, _proposalId);
     }
 
-function WinningProposal() public  onlyOwner {
-    uint _winningVoteCount=0;
-        
-        require(_workflow == WorkflowStatus.VotingSessionEnded);
-        for (uint i = 0; i < _proposallist.length; i++) {
+    /**
+     * @dev Get the winning proposal
+     * We take the the first one in the list in case of equality
+     * Set _winningProposalId with the index of winning _proposallist
+     */
+    function WinningProposal() public onlyOwner {
+        uint32 _winningVoteCount = 0;
+
+        require(
+            _workflow == WorkflowStatus.VotingSessionEnded,
+            "The status is not correct : Must be VotingSessionEnded"
+        );
+        for (uint16 i = 0; i < _proposallist.length; i++) {
             if (_proposallist[i].voteCount > _winningVoteCount) {
                 _winningVoteCount = _proposallist[i].voteCount;
                 _winningProposalId = i;
@@ -85,54 +130,96 @@ function WinningProposal() public  onlyOwner {
         }
 
         _workflow = WorkflowStatus.VotesTallied;
-        emit WorkflowStatusChange(WorkflowStatus.VotingSessionEnded, WorkflowStatus.VotesTallied);
+        emit WorkflowStatusChange(
+            WorkflowStatus.VotingSessionEnded,
+            WorkflowStatus.VotesTallied
+        );
         emit VotesTallied();
-        
-        
     }
 
-function Winner() public view returns (string memory, uint){
-        require(_workflow == WorkflowStatus.VotesTallied, "Result is not ready!");
-        return ( _proposallist[ _winningProposalId].description,_proposallist[ _winningProposalId].voteCount);
+    /**
+     * @dev Get proposal winner information
+     * @return _proposallist[_winningProposalId] Proposal proposal
+     */
+    function Winner() public view returns (Proposal memory) {
+        require(
+            _workflow == WorkflowStatus.VotesTallied,
+            "Result is not ready!"
+        );
+        return _proposallist[_winningProposalId];
     }
 
-function ProposalStart() public  onlyOwner {
-        require(_workflow == WorkflowStatus.RegisteringVoters);
+    /**
+     * @dev Get proposal by id
+     * @return Proposal proposal
+     */
+    function GetProposal(uint16 _proposalId) public view returns (Proposal memory) {
+
+        return _proposallist[_proposalId];
+    }
+
+    /**
+     * @dev Start proposal period
+     */
+    function ProposalStart() public onlyOwner {
+        require(
+            _workflow == WorkflowStatus.RegisteringVoters,
+            "The status is not correct : Must be RegisteringVoters"
+        );
         _workflow = WorkflowStatus.ProposalsRegistrationStarted;
-        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.ProposalsRegistrationStarted);
+
+        emit WorkflowStatusChange(
+            WorkflowStatus.RegisteringVoters,
+            WorkflowStatus.ProposalsRegistrationStarted
+        );
         emit ProposalsRegistrationStarted();
-        
     }
 
-function ProposalEnd() public onlyOwner {
-        require(_workflow ==WorkflowStatus.ProposalsRegistrationStarted);
-        _workflow=WorkflowStatus.ProposalsRegistrationEnded;
-        emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted,WorkflowStatus.ProposalsRegistrationEnded);
+    /**
+     * @dev End proposal period
+     */
+    function ProposalEnd() public onlyOwner {
+        require(
+            _workflow == WorkflowStatus.ProposalsRegistrationStarted,
+            "The status is not correct : Must be VotingSessionEnded"
+        );
+        _workflow = WorkflowStatus.ProposalsRegistrationEnded;
+        emit WorkflowStatusChange(
+            WorkflowStatus.ProposalsRegistrationStarted,
+            WorkflowStatus.ProposalsRegistrationEnded
+        );
         emit ProposalsRegistrationEnded();
-       
     }
 
-
-
-function VoteStart() public onlyOwner{
-        require(_workflow == WorkflowStatus.ProposalsRegistrationEnded);
-       _workflow = WorkflowStatus.VotingSessionStarted;
-        emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationEnded, WorkflowStatus.VotingSessionStarted);
+    /**
+     * @dev Start vote period
+     */
+    function VoteStart() public onlyOwner {
+        require(
+            _workflow == WorkflowStatus.ProposalsRegistrationEnded,
+            "The status is not correct : Must be ProposalsRegistrationEnded"
+        );
+        _workflow = WorkflowStatus.VotingSessionStarted;
+        emit WorkflowStatusChange(
+            WorkflowStatus.ProposalsRegistrationEnded,
+            WorkflowStatus.VotingSessionStarted
+        );
         emit VotingSessionStarted();
-       
-}
+    }
 
-function VoteEnd() public onlyOwner {
-        require(_workflow == WorkflowStatus.VotingSessionStarted);
+    /**
+     * @dev End vote period
+     */
+    function VoteEnd() public onlyOwner {
+        require(
+            _workflow == WorkflowStatus.VotingSessionStarted,
+            "The status is not correct : Must be VotingSessionEnded"
+        );
         _workflow = WorkflowStatus.VotingSessionEnded;
-         emit WorkflowStatusChange(WorkflowStatus.VotingSessionStarted, WorkflowStatus.VotingSessionEnded);
-         emit VotingSessionEnded ();
-       
+        emit WorkflowStatusChange(
+            WorkflowStatus.VotingSessionStarted,
+            WorkflowStatus.VotingSessionEnded
+        );
+        emit VotingSessionEnded();
+    }
 }
-    
-
-}
-
-
-
-
